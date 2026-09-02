@@ -71,3 +71,8 @@ Tear down the lab configuration and cluster components to free up local machine 
 kind delete cluster --name troubleshooting-cluster
 rm lab-manifest-q81.yaml kind-config.yaml
 ```
+
+
+
+<img width="1887" height="1023" alt="image" src="https://github.com/user-attachments/assets/6d53c354-421a-4b35-9243-b78c2dc66e80" />
+
