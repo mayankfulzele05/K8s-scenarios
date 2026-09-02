@@ -1,9 +1,9 @@
-# Enterprise DevOps Playbook: Triaging Aggressive Liveness Probe Failures (Q82)
+# Enterprise DevOps Playbook: Triaging Container Exit Code 127 Failures (Q82)
 
-This production lab models an infrastructure deadlock scenario where an application's required warm-up timeframe conflicts with aggressive cluster health thresholds, causing an endless automated termination loop.
+This production lab models an deployment failure where a microservice manifest targets an unavailable system binary path inside a secured, minimal container base image.
 
 ## 🏢 Infrastructure Incident Creation
-Execute the setup script to provision the multi-node testing infrastructure and trigger the health check failures:
+Execute the setup script to provision the multi-node testing infrastructure and trigger the binary route failure:
 ```bash
 chmod +x setup-lab.sh
 ./setup-lab.sh
@@ -14,75 +14,72 @@ chmod +x setup-lab.sh
 ## 🕵️‍♂️ Enterprise Incident Response & Triage Pipeline
 
 ### 1. Evaluate Blast Radius (Impact Assessment)
-Query the running pods in the target business unit namespace:
+Query the running pods in the target namespace:
 ```bash
-kubectl get pods -n production-checkout
+kubectl get pods -n production-shipping
 ```
-*System State:* Replicas flip repeatedly through `Running` ➡️ `Error` ➡️ `CrashLoopBackOff`, flagging an active critical availability impairment.
+*System State:* Replicas instantly trip into `CrashLoopBackOff` or `Error` states with high restart frequencies.
 
-### 2. Isolate Control Plane Infrastructure Logs
-Since the container reports cyclic restarts, pull the node engine event trace metrics from the local Kubelet agent:
+### 2. Isolate Container Runtime Exit Parameters
+Query the pod configuration metadata to extract the exact termination signatures returned by the container environment:
 ```bash
 # Capture an active pod name dynamically
-POD_NAME=$(kubectl get pods -n production-checkout -l app=payment-processor -o jsonpath='{.items.metadata.name}')
+POD_NAME=$(kubectl get pods -n production-shipping -l app=tracking-api -o jsonpath='{.items.metadata.name}')
 
-# Inspect node events
-kubectl describe pod $POD_NAME -n production-checkout
+# Inspect container states
+kubectl describe pod $POD_NAME -n production-shipping
 ```
-Navigate straight to the **Events:** block at the bottom of the system readout:
+Navigate to the container status section and analyze the `Last State:` properties:
 ```text
-Events:
-  Type     Reason     Age                From               Message
-  ----     ------     ---                ----               -------
-  Warning  Unhealthy  25s (x2 over 28s)  kubelet            Liveness probe failed: cat: can't open '/tmp/healthy'
-  Normal   Killing    25s                kubelet            Container gateway-app failed liveness probe, will be restarted
+Containers:
+  shipping-engine:
+    State:          Waiting
+      Reason:       CrashLoopBackOff
+    Last State:     Terminated
+      Reason:       Error
+      Exit Code:    127              <--- ❌ Standard System Code for "Command/Binary Not Found"
 ```
 
-### 3. Cross-Reference Application Initialization Timings
-Query the historical output data streams from the previous dead container shell before it was terminated:
+### 3. Review OCI Container Engine Logs
+Query the log buffer stream to view the error thrown during the initial bootstrap hook:
 ```bash
-kubectl logs \$POD_NAME -n production-checkout --previous
+kubectl logs $POD_NAME -n production-shipping
 ```
-*Triage Discovery:* The app prints its boot script messages normally but terminates exactly 8–10 seconds into execution. Cross-referencing this with the `livenessProbe` specs (`initialDelaySeconds: 2` + `failureThreshold: 2`) proves that the cluster is killing the app before it completes its 15-second initialization.
+*Triage Discovery:* The container engine explicitly outputs an execution failure:
+```text
+OCI runtime create failed: exec: "/bin/bash": stat /bin/bash: no such file or directory
+```
+This isolates the root cause: The deployment manifest explicitly requests an environment shell execution path (`/bin/bash`) that does not exist inside standard minimal base layers like Alpine Linux.
 
 ---
 
 ## 🛠️ Production-Safe GitOps Resolution
 
-Following cloud-native architecture patterns, do not remove safety probes entirely. Instead, implement a protective **`startupProbe`** configuration layer to shield the microservice during its initial load window:
+Following enterprise infrastructure-as-code patterns, update the source manifest file to leverage correct shell parameters:
 
 1. Open the deployment manifest file in your code editor:
    ```bash
-   nano lab-manifest-q82-probe.yaml
+   nano lab-manifest-q82-127.yaml
    ```
-2. Inject a `startupProbe` block above the existing `livenessProbe` to handle the startup window:
+2. Locate the container properties block and map the command argument list to an available shell executable path (`/bin/sh`):
    ```yaml
-   startupProbe:
-     exec:
-       command:
-       - cat
-       - /tmp/healthy
-     initialDelaySeconds: 5
-     periodSeconds: 5
-     failureThreshold: 5     # Grants up to 25 total seconds for initial boot
-   livenessProbe:
-     exec:
-       command:
-       - cat
-       - /tmp/healthy
-     periodSeconds: 10
+   spec:
+     containers:
+     - name: shipping-engine
+       image: alpine:latest
+       command: ["/bin/sh", "-c"] # ✅ Corrected from /bin/bash
    ```
-3. Apply the updated configuration declaratively to trigger a managed rolling update update:
+3. Apply the updated code manifest declaratively to trigger a managed rolling update update:
    ```bash
-   kubectl apply -f lab-manifest-q82-probe.yaml
+   kubectl apply -f lab-manifest-q82-127.yaml
    ```
 
-### 4. Verify Microservice Recovery
-Monitor the rollout status thread to confirm stable infrastructure convergence:
+### 4. Monitor Infrastructure Recovery
+Track the deployment update progress until complete:
 ```bash
-kubectl rollout status deployment/payment-gateway -n production-checkout
+kubectl rollout status deployment/tracking-service -n production-shipping
 ```
-*Expected Output:* `deployment "payment-gateway" successfully rolled out`.
+*Expected Output:* `deployment "tracking-service" successfully rolled out`.
 
 ---
 
@@ -90,11 +87,5 @@ kubectl rollout status deployment/payment-gateway -n production-checkout
 Tear down the lab configuration and cluster components to free up local machine resources:
 ```bash
 kind delete cluster --name troubleshooting-cluster
-rm lab-manifest-q82-probe.yaml kind-config.yaml
+rm lab-manifest-q82-127.yaml kind-config.yaml
 ```
-
-
-<img width="1743" height="1033" alt="image" src="https://github.com/user-attachments/assets/e8569569-ca09-4dfe-9119-bf234e6bcb4b" />
-<img width="1858" height="1021" alt="image" src="https://github.com/user-attachments/assets/2a4a8dd2-20d4-4fab-b1ca-a01a6a8bd7c4" />
-
-
