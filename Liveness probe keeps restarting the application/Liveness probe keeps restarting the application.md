@@ -92,3 +92,5 @@ Tear down the lab configuration and cluster components to free up local machine 
 kind delete cluster --name troubleshooting-cluster
 rm lab-manifest-liveness.yaml kind-config.yaml
 ```
+
+<img width="1864" height="1031" alt="image" src="https://github.com/user-attachments/assets/38ac46a1-7e68-44d1-9cf2-f73f25710c4c" />
